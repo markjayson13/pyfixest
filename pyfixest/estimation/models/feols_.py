@@ -621,7 +621,6 @@ class Feols(ResultAccessorMixin, DeprecatedAttributes):
         self,
         vcov: str | dict[str, str],
         vcov_kwargs: dict[str, str | int] | None = None,
-        data: DataFrameType | None = None,
     ) -> Feols:
         """
         Compute covariance matrices for an estimated regression model.
@@ -638,10 +637,6 @@ class Feols(ResultAccessorMixin, DeprecatedAttributes):
             for IV estimation.
         vcov_kwargs : Optional[dict[str, any]]
              Additional keyword arguments for the variance-covariance matrix.
-        data : Optional[DataFrameType], optional
-            No longer supported; passing a frame raises `ValueError`. The
-            covariance matrix uses the estimation sample stored on the model.
-            This argument will be removed in a future release.
 
         Notes
         -----
@@ -675,13 +670,6 @@ class Feols(ResultAccessorMixin, DeprecatedAttributes):
         See [On Small Sample Corrections](/explanation/ssc.qmd) for how the
         `ssc` adjustments interact with each estimator.
         """
-        if data is not None:
-            raise ValueError(
-                "The `data` argument of `vcov()` is no longer supported: the "
-                "covariance matrix uses the estimation sample stored on the "
-                "model. Call `vcov()` without `data`. To cluster on a variable "
-                "missing from the estimation data, refit with it included."
-            )
         self._require_capability(
             capability="covariance_update",
             method="vcov",

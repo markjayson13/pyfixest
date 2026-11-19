@@ -17,6 +17,13 @@ fit3 = pf.feols("Y ~ X1 + X2 | f1", data = df)
 
 ## Unreleased
 
+### Breaking Changes
+
+- The `data` argument of `vcov()` is removed. It raised `ValueError` since
+  0.70.0 and is now a `TypeError`. The covariance matrix uses the estimation
+  sample stored on the model
+  ([#1957](https://github.com/py-econometrics/pyfixest/issues/1957)).
+
 ### Bug Fixes
 
 - A multiple estimation call whose expansions mix IV and non-IV models, such as

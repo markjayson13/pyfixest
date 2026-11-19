@@ -213,14 +213,6 @@ def test_missing_unrelated_to_retention_remains_attribute_error():
         fit.vcov("iid")
 
 
-def test_vcov_rejects_data():
-    """`vcov(data=...)` raises instead of pairing rows by position (#1825)."""
-    data = get_data().dropna()
-    fit = feols("Y ~ X1 + X2", data=data)
-    with pytest.raises(ValueError, match=r"`data` argument of `vcov\(\)`"):
-        fit.vcov({"CRV1": "f1"}, data=data)
-
-
 def test_error_hc23_fe():
     """
     Test if HC2 & HC3 inference with fixed effects regressions raises an error.
