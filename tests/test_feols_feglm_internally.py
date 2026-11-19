@@ -408,3 +408,154 @@ def test_glm_resid_types(family):
 
     with pytest.raises(ValueError, match="type must be one of 'response' or 'working'"):
         mod.resid(type="deviance")
+
+
+def _fe_only_frame() -> pd.DataFrame:
+    """Small panel with an intercept-absorbing effect and a slope covariate."""
+    rng = np.random.default_rng(11)
+    n_obs = 48
+    group = np.repeat(np.arange(6), 8)
+    slope = rng.normal(size=n_obs)
+    response = 1.5 + group + 0.4 * group * slope + rng.normal(size=n_obs)
+    return pd.DataFrame(
+        {
+            "Y": response,
+            "X1": rng.normal(size=n_obs),
+            "X2": slope,
+            "f1": group,
+            "row_id": np.arange(n_obs),
+            "weights": rng.uniform(0.3, 2.0, size=n_obs),
+            "counts": rng.integers(1, 4, size=n_obs),
+        }
+    )
+
+
+def _expected_overall_fit(fit) -> tuple[float, float, float]:
+    """RMSE, R², and adjusted R² from the response and residuals.
+
+    The sums are taken here, so the assertion fails if `fitstat` stays `NaN`.
+    Adjusted R² uses fixest's `(n - 1) / (n - k - k_fe)` factor.
+    """
+    response = fit.model_matrix.dependent.to_numpy().reshape(-1)
+    residuals = np.asarray(fit.resid(), dtype=np.float64)
+    weights = fit.observation_weights.values
+    n_obs = fit.sample_info.n_obs
+    if weights is None:
+        residual_ss = float(np.sum(residuals**2))
+        total_ss = float(np.sum((response - np.mean(response)) ** 2))
+        sum_weights = n_obs
+    else:
+        w = np.asarray(weights, dtype=np.float64).reshape(-1)
+        residual_ss = float(np.sum(w * residuals**2))
+        center = float(np.average(response, weights=w))
+        total_ss = float(np.sum(w * (response - center) ** 2))
+        sum_weights = float(np.sum(w))
+    ratio = residual_ss / total_ss
+    denominator = n_obs - fit._k - fit.fixef_counts.fixef_dof
+    adjusted = np.nan if denominator == 0 else 1 - ratio * (n_obs - 1) / denominator
+    return float(np.sqrt(residual_ss / sum_weights)), 1 - ratio, float(adjusted)
+
+
+def _assert_coefficient_free_fit(fit) -> None:
+    rmse, r2, adj_r2 = _expected_overall_fit(fit)
+    np.testing.assert_allclose(fit.fitstat.rmse, rmse, err_msg="rmse")
+    np.testing.assert_allclose(fit.fitstat.r2, r2, err_msg="r2")
+    np.testing.assert_allclose(
+        fit.fitstat.adj_r2, adj_r2, equal_nan=True, err_msg="adj_r2"
+    )
+    # fixest leaves the within R² undefined when there are no coefficients.
+    assert np.isnan(fit.fitstat.r2_within)
+    assert np.isnan(fit.fitstat.adj_r2_within)
+    assert fit._k == 0
+
+
+@pytest.mark.parametrize(
+    "fml",
+    ["Y ~ 1 | f1", "Y ~ 0 | f1", "Y ~ 1 | f1[X2]", "Y ~ 0 | f1[[X2]]"],
+)
+@pytest.mark.parametrize(
+    ("weights", "weights_type"),
+    [
+        (None, "aweights"),
+        ("weights", "aweights"),
+        ("counts", "fweights"),
+    ],
+)
+def test_fixed_effects_only_fit_statistics(fml, weights, weights_type):
+    """Report R², adjusted R², and RMSE when the model has no coefficients."""
+    data = _fe_only_frame()
+    fit = pf.feols(fml, data, weights=weights, weights_type=weights_type)
+    _assert_coefficient_free_fit(fit)
+
+
+def test_fixed_effects_only_matches_gaussian_and_survives_retention():
+    """Gaussian GLM uses the same measures, including after lean storage."""
+    data = _fe_only_frame()
+    ols = pf.feols("Y ~ 1 | f1", data)
+    intercept_free = pf.feols("Y ~ 0 | f1", data)
+    gaussian = pf.feglm("Y ~ 1 | f1", data, family="gaussian")
+    for name in ("rmse", "r2", "adj_r2", "r2_within", "adj_r2_within"):
+        np.testing.assert_allclose(
+            getattr(ols.fitstat, name),
+            getattr(intercept_free.fitstat, name),
+            equal_nan=True,
+            err_msg=f"Y ~ 0 | f1 {name}",
+        )
+        np.testing.assert_allclose(
+            getattr(ols.fitstat, name),
+            getattr(gaussian.fitstat, name),
+            equal_nan=True,
+            err_msg=f"gaussian {name}",
+        )
+    for kwargs in ({"lean": True}, {"store_data": False}):
+        retained = pf.feols("Y ~ 1 | f1", data, **kwargs)
+        for name in ("rmse", "r2", "adj_r2", "r2_within", "adj_r2_within"):
+            np.testing.assert_allclose(
+                getattr(retained.fitstat, name),
+                getattr(ols.fitstat, name),
+                equal_nan=True,
+                err_msg=f"{kwargs} {name}",
+            )
+
+
+def test_saturated_fixed_effects_only_fit_statistics():
+    """One effect per row fits perfectly; adjusted R² has no residual degrees of freedom."""
+    data = _fe_only_frame()
+    fit = pf.feols("Y ~ 1 | row_id", data, fixef_rm="none")
+    _assert_coefficient_free_fit(fit)
+    assert fit.fitstat.rmse == 0
+    assert fit.fitstat.r2 == 1
+    assert np.isnan(fit.fitstat.adj_r2)
+
+    frequency = pf.feols(
+        "Y ~ 1 | row_id",
+        data,
+        fixef_rm="none",
+        weights="counts",
+        weights_type="fweights",
+    )
+    # Frequency weights count repeated rows, so residual degrees of freedom remain.
+    _assert_coefficient_free_fit(frequency)
+    assert frequency.sample_info.n_obs > frequency.fixef_counts.fixef_dof
+    assert frequency.fitstat.r2 == 1
+    lean = pf.feols(
+        "Y ~ 1 | row_id",
+        data,
+        fixef_rm="none",
+        weights="counts",
+        weights_type="fweights",
+        lean=True,
+    )
+    np.testing.assert_allclose(lean.fitstat.adj_r2, frequency.fitstat.adj_r2)
+
+
+def test_multiple_estimation_reports_empty_model_fit():
+    """`sw0` includes the fixed-effects-only model, which has the same fit."""
+    data = _fe_only_frame()
+    reference = pf.feols("Y ~ 1 | f1", data)
+    fits = pf.feols("Y ~ sw0(X1) | f1", data).to_list()
+    empty = [fit for fit in fits if fit._k == 0]
+    assert len(empty) == 1
+    _assert_coefficient_free_fit(empty[0])
+    np.testing.assert_allclose(empty[0].fitstat.rmse, reference.fitstat.rmse)
+    np.testing.assert_allclose(empty[0].fitstat.r2, reference.fitstat.r2)

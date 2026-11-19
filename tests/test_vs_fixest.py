@@ -437,6 +437,27 @@ def test_single_fit_feols_empty(
     )
 
     assert mod._beta_hat.size == 0
+    # Same projection error as the residuals above. On this fixture it moves
+    # R² and RMSE by less than 1e-8; within R² is undefined on both sides.
+    r_r2 = np.asarray(
+        fixest.r2(r_fixest, ro.StrVector(["r2", "ar2", "wr2", "war2"])), dtype=float
+    )
+    np.testing.assert_allclose(
+        [
+            mod.fitstat.r2,
+            mod.fitstat.adj_r2,
+            mod.fitstat.r2_within,
+            mod.fitstat.adj_r2_within,
+        ],
+        r_r2,
+        rtol=0,
+        atol=1e-8,
+        equal_nan=True,
+        err_msg="r2",
+    )
+    ro.globalenv["r_fixest"] = r_fixest
+    r_rmse = float(ro.r('fixest::fitstat(r_fixest, "rmse")$rmse')[0])
+    check_absolute_diff(mod.fitstat.rmse, r_rmse, 1e-8, "py_rmse != r_rmse")
 
 
 @pytest.mark.against_r_core

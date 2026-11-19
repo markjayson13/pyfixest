@@ -592,11 +592,9 @@ class Feols(ResultAccessorMixin, DeprecatedAttributes):
         `get_fit()`, before `lean=True` clears the arrays read here.
         Subclasses override this hook to compute their own measures; an
         override returns ``FitStatistics()`` where the estimator defines none.
+        A fixed-effects-only design still has an R², adjusted R², and RMSE;
+        the within variants stay undefined.
         """
-        # Empty designs are used only for demeaning and may have no residual
-        # degrees of freedom. Leave their fit statistics undefined.
-        if self._X_is_empty:
-            return FitStatistics()
         return linear_fit_statistics(
             Y=self.model_matrix.dependent.to_numpy(),
             Y_within=self.within_data.response,

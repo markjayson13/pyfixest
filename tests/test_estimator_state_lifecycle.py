@@ -427,23 +427,6 @@ def test_gaussian_glm_performance_uses_explicit_response_domains(
     [
         (pf.feols, "y ~ x + [endog ~ z] | fe", {}),
         (pf.quantreg, "y ~ x", {"quantile": 0.5}),
-        (pf.feols, "y ~ 1 | fe", {}),
-        (pf.feols, "y ~ 1 | row_id", {"fixef_rm": "none"}),
-        (
-            pf.feols,
-            "y ~ 1 | row_id",
-            {"fixef_rm": "none", "weights": "weight", "store_data": False},
-        ),
-        (
-            pf.feols,
-            "y ~ 1 | row_id",
-            {
-                "fixef_rm": "none",
-                "weights": "weight",
-                "weights_type": "fweights",
-                "lean": True,
-            },
-        ),
     ],
 )
 def test_undefined_fit_statistics_are_nan(
