@@ -28,10 +28,12 @@ class FitStatistics:
     r2_within : float
         R-squared on the dependent variable residualized on the fixed effects.
         Defined for ``feols()`` and Gaussian ``feglm()`` fits with fixed
-        effects.
+        effects and at least one estimated coefficient. ``NaN`` for a
+        fixed-effects-only model, as ``fixest::r2`` returns for ``onlyFixef``.
     adj_r2_within : float
         Adjusted within R-squared. Defined for ``feols()`` and Gaussian
-        ``feglm()`` fits with fixed effects.
+        ``feglm()`` fits with fixed effects and at least one estimated
+        coefficient.
     deviance : float
         Deviance of the fitted model. Defined for ``feglm()`` and ``fepois()``
         fits.
@@ -109,8 +111,9 @@ def linear_fit_statistics(
     Returns
     -------
     FitStatistics
-        The linear measures; the within variants are ``NaN`` without fixed
-        effects.
+        The linear measures. The within variants are ``NaN`` without fixed
+        effects and for a model with no estimated coefficients. Adjusted
+        measures are ``NaN`` when no residual degrees of freedom remain.
     """
     if weights is None:
         ssu = np.sum(residuals**2)
@@ -124,13 +127,15 @@ def linear_fit_statistics(
         # does not depend on the scale of the weights.
         sum_weights = np.sum(w)
 
-    if has_fixef:
-        adj_factor = (N - has_intercept) / (N - k - k_fe)
-    else:
-        adj_factor = (N - has_intercept) / (N - k)
+    # A saturated fixed-effects projection uses every residual degree of
+    # freedom. fixest then leaves the adjusted R² undefined (0/0).
+    denominator = (N - k - k_fe) if has_fixef else (N - k)
+    adj_factor = np.nan if denominator == 0 else (N - has_intercept) / denominator
 
+    # fixest::r2 skips within R² when the model has no coefficients
+    # (`onlyFixef`), rather than reporting the zero the ratio would give.
     r2_within = adj_r2_within = np.nan
-    if has_fixef:
+    if has_fixef and k > 0:
         ssy_within = np.sum(Y_within**2) if weights is None else np.sum(w * Y_within**2)
         adj_factor_within = (N - k_fe) / (N - k - k_fe)
         r2_within = 1 - (ssu / ssy_within)

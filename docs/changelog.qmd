@@ -19,6 +19,12 @@ fit3 = pf.feols("Y ~ X1 + X2 | f1", data = df)
 
 ### Bug Fixes
 
+- Models with no estimated coefficients, such as `feols("Y ~ 1 | f1")` and
+  `feols("Y ~ 1 | f1[X2]")`, now report `fitstat.r2`, `fitstat.adj_r2`, and
+  `fitstat.rmse`. Within R² stays undefined, as in fixest, including for the
+  same Gaussian `feglm()` fits. Previously `feols()` left every fit statistic
+  `NaN`
+  ([#2002](https://github.com/py-econometrics/pyfixest/issues/2002)).
 - A multiple estimation call whose expansions mix IV and non-IV models, such as
   `Y ~ X1 + sw([X2 ~ Z1], Z2)`, raises `FormulaSyntaxError` naming both groups.
   Before, every model was fitted as IV and the call failed with an unrelated
